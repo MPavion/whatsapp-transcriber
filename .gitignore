@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+
+# Whisper model cache
+.cache/
+*.pt
+
+# WhatsApp exports (never commit personal chat data)
+*.zip
+*_chat.txt
+*.opus
+*.m4a
+*.mp3
+*.ogg
+*.aac
+*.wav
+*.wma
+*.oga
+*.txt.txt
+*.opus.txt
+*.m4a.txt
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.swp

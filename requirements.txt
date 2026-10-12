@@ -1,0 +1,5 @@
+# Primary transcription backend (faster, lower memory usage)
+faster-whisper
+
+# Fallback — uncomment if faster-whisper fails to install
+# openai-whisper
