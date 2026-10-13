@@ -270,38 +270,80 @@ def _extract_zip(zip_path: Path) -> Path:
     return out
 
 
-def _find_chat_dirs(root: Path) -> List[Path]:
+def _find_chat_dirs(
+    root: Path,
+    log: Optional[Callable[[str], None]] = None,
+) -> List[Path]:
     """
     Recursively find all directories containing _chat.txt.
     Extracts any ZIP files found along the way.
+    Logs every step so callers can diagnose missing exports.
     """
+    def _l(msg: str) -> None:
+        if log:
+            log(msg)
+
     dirs: List[Path] = []
 
-    for z in sorted(root.rglob("*.zip")):
+    # ── Pass 1: extract ZIPs and check for _chat.txt inside ───────────────
+    zips = sorted(root.rglob("*.zip"))
+    if zips:
+        _l(f"  Found {len(zips)} ZIP file(s)")
+    for z in zips:
         try:
             extracted = _extract_zip(z)
-            if (extracted / "_chat.txt").exists() and extracted not in dirs:
-                dirs.append(extracted)
+            if (extracted / "_chat.txt").exists():
+                _l(f"  ZIP export: {z.relative_to(root)}")
+                if extracted not in dirs:
+                    dirs.append(extracted)
+            else:
+                _l(f"  ZIP skipped (no _chat.txt inside): {z.name}")
+        except Exception as exc:
+            _l(f"  ZIP error — {z.name}: {exc}")
+
+    # ── Pass 2: find already-extracted folders with _chat.txt ─────────────
+    chat_files = sorted(root.rglob("_chat.txt"))
+    for cf in chat_files:
+        d = cf.parent
+        if d not in dirs:
+            _l(f"  Extracted export: {cf.relative_to(root)}")
+            dirs.append(d)
+
+    # ── Nothing found: list the top-level contents to help the user ───────
+    if not dirs:
+        _l(f"  No WhatsApp exports found under: {root}")
+        _l("  Top-level contents of selected folder:")
+        try:
+            for item in sorted(root.iterdir()):
+                marker = "/" if item.is_dir() else ""
+                _l(f"    {item.name}{marker}")
         except Exception:
             pass
-
-    for chat_file in sorted(root.rglob("_chat.txt")):
-        d = chat_file.parent
-        if d not in dirs:
-            dirs.append(d)
 
     return dirs
 
 
-def scan_source_folder(source: Path) -> ScanResult:
+def scan_source_folder(
+    source: Path,
+    log: Optional[Callable[[str], None]] = None,
+) -> ScanResult:
     result = ScanResult(source_folder=source)
     all_messages: List[Message] = []
 
-    chat_dirs = _find_chat_dirs(source)
+    chat_dirs = _find_chat_dirs(source, log=log)
     result.conversations_found = len(chat_dirs)
 
     for chat_dir in chat_dirs:
-        msgs = parse_chat_file(chat_dir / "_chat.txt", chat_dir)
+        try:
+            msgs = parse_chat_file(chat_dir / "_chat.txt", chat_dir)
+        except Exception as exc:
+            if log:
+                log(f"  Parse error in {chat_dir.name}: {exc}")
+            msgs = []
+
+        if log and msgs:
+            log(f"  {chat_dir.name}: {len(msgs)} messages")
+
         all_messages.extend(msgs)
 
         for msg in msgs:
@@ -315,7 +357,7 @@ def scan_source_folder(source: Path) -> ScanResult:
             else:
                 result.missing_audio += 1
 
-    # Chronological merge — naturally combines multiple accounts
+    # Chronological merge — naturally combines multiple accounts / sub-folders
     all_messages.sort(key=lambda m: m.timestamp)
     result.messages = all_messages
     return result
@@ -400,9 +442,11 @@ def build_transcript_file(messages: List[Message], out_path: Path) -> None:
         if d != current_date:
             if lines:
                 lines.append("")
+                lines.append("")
             lines.append("=" * 64)
             lines.append(f"  {d.strftime('%A, %d %B %Y')}")
             lines.append("=" * 64)
+            lines.append("")
             current_date = d
         lines.append(msg.format_line())
 
@@ -609,7 +653,7 @@ class App(tk.Tk):
 
         def _do():
             try:
-                result = scan_source_folder(Path(folder))
+                result = scan_source_folder(Path(folder), log=self._log)
                 self.after(0, self._on_scan_done, result)
             except Exception as exc:
                 self._log(f"Scan error: {exc}")
