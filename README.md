@@ -1,18 +1,24 @@
 # WhatsApp Transcriber
 
-A Python GUI application that processes WhatsApp chat exports, transcribes voice messages using [Whisper](https://github.com/openai/whisper), and produces a single unified text transcript with all messages — including audio — in chronological order.
+A Python desktop application that processes WhatsApp chat exports, transcribes voice messages using [Whisper](https://github.com/openai/whisper), and produces a single unified text transcript with all messages — including audio — in chronological order.
 
 ---
 
 ## Features
 
-- **Automatic ZIP extraction** — point it at a folder of WhatsApp `.zip` exports; the app unpacks them automatically
-- **Voice message transcription** — uses [faster-whisper](https://github.com/guillaumeklinvex/faster-whisper) (or `openai-whisper` as fallback) to transcribe `.opus`, `.m4a`, and other audio formats
-- **Saved transcript reuse** — if you place a `.txt` file alongside an audio file (manual transcription), it is used as-is and Whisper is not called
-- **Multi-account merging** — put multiple WhatsApp exports for the same person in one folder; all messages are merged into a single chronological output
-- **Re-run friendly** — after each transcription, a `.txt` is saved next to the audio file; subsequent runs skip already-transcribed files
-- **Scan statistics** — before committing to a full transcription run, see exactly how many audio files need processing vs. are already done
-- **Model selection** — choose from `tiny` (fastest) through `large` (most accurate) Whisper models
+| Feature | Detail |
+|---------|--------|
+| **ZIP or folder input** | Open a WhatsApp `.zip` export directly, or point to a folder |
+| **Voice message transcription** | Uses [faster-whisper](https://github.com/guillaumeklinvex/faster-whisper) (or `openai-whisper` as fallback) |
+| **GPU acceleration** | Auto-detects CUDA; runs significantly faster on an NVIDIA GPU |
+| **Language selection** | 30+ languages, or leave on Auto-detect |
+| **Saved transcript reuse** | `.srt` or `.txt` sidecars next to audio files are used as-is — Whisper is not called again |
+| **Multi-account merging** | Put multiple exports in one folder; all messages are merged chronologically |
+| **Non-standard filenames** | Recognises exports where the chat file isn't named `_chat.txt` |
+| **Transcript header** | Output includes participants, date range, and message counts |
+| **Date separators** | Output is divided into clearly labelled day sections |
+| **Re-run safe** | Transcriptions are saved alongside audio; subsequent runs skip completed files |
+| **Remembered settings** | Last path, model, language, and device are saved between sessions |
 
 ---
 
@@ -21,56 +27,73 @@ A Python GUI application that processes WhatsApp chat exports, transcribes voice
 ### Python packages (auto-installed on first run)
 - `faster-whisper` (preferred) or `openai-whisper`
 
-### System dependency — FFmpeg (manual install required)
+### System dependency — FFmpeg
 
-Whisper uses FFmpeg to decode audio. Install it and ensure it is on your system PATH before running the app.
+Whisper uses FFmpeg to decode audio. Install it and ensure it is on your PATH **before** running the app.
 
-- **Windows:** Download from [ffmpeg.org](https://ffmpeg.org/download.html), extract, and add the `bin/` folder to your PATH. Or install via `winget`:
-  ```
-  winget install --id Gyan.FFmpeg
-  ```
-- **macOS:** `brew install ffmpeg`
-- **Linux:** `sudo apt install ffmpeg` (Debian/Ubuntu) or equivalent
+**Windows**
+```
+winget install --id Gyan.FFmpeg
+```
+Or download from [ffmpeg.org](https://ffmpeg.org/download.html), extract, and add the `bin/` folder to your PATH.
+
+**macOS**
+```
+brew install ffmpeg
+```
+
+**Linux**
+```
+sudo apt install ffmpeg
+```
 
 ---
 
 ## Installation
 
 ```bash
-# Clone the repo
 git clone https://github.com/MPavion/whatsapp-transcriber.git
 cd whatsapp-transcriber
 
-# (Optional) create a virtual environment
+# Optional: create a virtual environment
 python -m venv .venv
 .venv\Scripts\activate        # Windows
 source .venv/bin/activate     # macOS / Linux
 
-# Install Python dependencies
 pip install -r requirements.txt
 ```
 
-Then run:
-
+Run the app:
 ```bash
 python transcriber.py
 ```
 
-Python packages can also be left to the app — it will detect and offer to install `faster-whisper` automatically on first launch.
+The app will auto-install `faster-whisper` if it's not already present.
+
+### Desktop shortcut (Windows)
+
+```bash
+python make_icon.py        # generates icon.ico (already committed, only needed if you change the icon)
+python create_shortcut.py  # creates a .lnk on your Desktop
+```
 
 ---
 
 ## Usage
 
-### Step 1 — Prepare your source folder
+### Step 1 — Prepare your source
 
-Create a folder and place your WhatsApp export(s) inside it:
+**Option A — Single ZIP export**
+Select the `.zip` file WhatsApp creates when you export a chat. The app extracts it automatically.
+
+**Option B — Folder of exports**
+Create a folder and place one or more WhatsApp exports inside it. Useful when you want to merge two accounts for the same contact:
 
 ```
 my_exports/
-├── WhatsApp Chat with Alice.zip          # single account
-├── WhatsApp Chat with Bob (phone 1).zip  # first of two accounts
-└── WhatsApp Chat with Bob (phone 2).zip  # second account — will be merged
+├── WhatsApp Chat with Alice.zip
+├── WhatsApp Chat with Bob (phone 1).zip   # first of two accounts
+└── WhatsApp Chat with Bob (phone 2).zip   # second account — merged automatically
 ```
 
 Sub-folders work too:
@@ -83,43 +106,45 @@ my_exports/
     └── WhatsApp Chat with Bob.zip
 ```
 
-All conversations in the source folder are merged chronologically into one output file.
-
 ### Step 2 — Scan
 
-1. Launch the app: `python transcriber.py`
-2. Click **Browse…** and select your source folder
-3. Click **Scan** — the app shows:
-   - How many conversations / exports were found
-   - Total message count
-   - Audio breakdown: already transcribed vs. needs transcription vs. file missing
+1. Click **Browse Folder...** or **Browse ZIP...**, or type the path directly
+2. Click **Scan**
 
-### Step 3 — Run
+The log shows what was found and the stats panel updates:
 
-1. Select a Whisper model size (see [Model sizes](#model-sizes))
-2. Click **▶ Transcribe & Build Transcript**
-3. Choose where to save the output `.txt` file
-4. The app transcribes pending audio files and builds the unified transcript
+- How many conversations / exports detected
+- Total message count
+- Audio breakdown: already transcribed vs. needs transcription vs. file missing
+
+### Step 3 — Configure and run
+
+| Option | Description |
+|--------|-------------|
+| **Model** | `tiny` = fastest; `large` = most accurate. `base` is a good starting point. |
+| **Language** | Set if you know the language; `Auto-detect` works well for most single-language chats. Setting an explicit language is faster and more accurate for short voice messages. |
+| **Device** | `GPU (CUDA)` is shown if an NVIDIA GPU is detected — significantly faster than CPU. |
+
+Click **Transcribe & Build Transcript**, choose where to save, and the app will:
+
+1. Transcribe any pending audio files
+2. Assemble the full unified transcript
+3. Offer to open the output file immediately
 
 ---
 
-## Manual transcriptions
+## Saved transcripts
 
-If you have already transcribed an audio file by hand, place a plain `.txt` file alongside it with the same base name:
-
-```
-PTT-20231012-WA0001.opus
-PTT-20231012-WA0001.opus.txt   ← manual transcript (preferred naming)
-```
-
-or
+Any `.srt` or `.txt` file placed alongside an audio file is used directly without calling Whisper:
 
 ```
 PTT-20231012-WA0001.opus
-PTT-20231012-WA0001.txt        ← also accepted
+PTT-20231012-WA0001.opus.srt   ← preferred (WisprFlow / subtitle format)
+PTT-20231012-WA0001.opus.txt   ← also accepted (plain text)
+PTT-20231012-WA0001.srt        ← also accepted (without audio extension)
 ```
 
-The app detects these and inserts the saved text instead of calling Whisper. The log and output label the source as `(saved)`.
+After transcription, the app saves a `.txt` sidecar next to each newly transcribed file, so re-running is instant.
 
 ---
 
@@ -127,31 +152,48 @@ The app detects these and inserts the saved text instead of calling Whisper. The
 
 ```
 ================================================================
-  Monday, 13 October 2025
+  WhatsApp Conversation Transcript
 ================================================================
-[09:14:22] Alice: Morning!
-[09:15:01] Bob: [Voice message (whisper): Hey, just calling to say I'll be a bit late today.]
-[09:15:44] Alice: No problem, see you soon.
-[09:17:30] Bob: [Voice message (saved): Running about 10 minutes behind.]
+  Participants : Alice, Bob
+  From         : 01 January 2023
+  To           : 13 October 2025
+  Messages     : 17,935  (4,893 voice, 4,893 transcribed)
+  Generated    : 13 October 2025 at 15:30
+================================================================
+
+
+================================================================
+  Monday, 01 January 2023
+================================================================
+
+[09:14:22] Alice: Happy New Year!
+[09:15:01] Bob: [Voice message (saved): Same to you, hope it's a good one!]
+[09:15:44] Alice: [Voice message (whisper): Thanks, you too. Let's catch up soon.]
+
+
+================================================================
+  Tuesday, 02 January 2023
+================================================================
+
+[10:00:00] Alice: Are you free this week?
 ```
 
-- Date headers separate each day
-- Voice messages are labelled `(whisper)` or `(saved)` so you can tell the source at a glance
-- If an audio file is referenced in the chat but the file is not present in the export, it is noted as `[Voice message – file not found]`
+- `(saved)` — transcript came from an existing `.srt` or `.txt` file
+- `(whisper)` — transcribed by Whisper during this run
 
 ---
 
-## Model sizes
+## Whisper model sizes
 
-| Model  | Speed    | Accuracy | VRAM (approx.) |
-|--------|----------|----------|----------------|
-| tiny   | Fastest  | Basic    | ~1 GB          |
-| base   | Fast     | Good     | ~1 GB          |
-| small  | Moderate | Better   | ~2 GB          |
-| medium | Slower   | Great    | ~5 GB          |
-| large  | Slowest  | Best     | ~10 GB         |
+| Model | Speed | Accuracy | VRAM |
+|-------|-------|----------|------|
+| tiny | Fastest | Basic | ~1 GB |
+| base | Fast | Good | ~1 GB |
+| small | Moderate | Better | ~2 GB |
+| medium | Slower | Great | ~5 GB |
+| large | Slowest | Best | ~10 GB |
 
-`base` is the default and works well for clear voice messages. Models are downloaded automatically on first use and cached locally.
+Models are downloaded automatically on first use and cached locally. `base` is the default.
 
 ---
 
@@ -165,14 +207,13 @@ WhatsApp voice messages are typically `.opus` (Android) or `.m4a` (iOS).
 
 ## Supported WhatsApp export date formats
 
-The parser handles all known WhatsApp timestamp formats across locales:
-
 | Format | Example |
 |--------|---------|
 | `[DD/MM/YYYY, HH:MM:SS]` | `[13/10/2025, 09:14:22]` |
-| `[DD/MM/YYYY, HH:MM]`    | `[13/10/2025, 09:14]` |
-| `DD/MM/YYYY, HH:MM –`    | `13/10/2025, 09:14 – ` |
-| `M/D/YY, H:MM AM/PM –`   | `10/13/25, 9:14 AM – ` |
+| `[DD/MM/YYYY, HH:MM]` | `[13/10/2025, 09:14]` |
+| `DD/MM/YYYY, HH:MM –` | `13/10/2025, 09:14 –` |
+| `M/D/YY, H:MM AM/PM –` | `10/13/25, 9:14 AM –` |
+| `[DD/MM/YYYY, H:MM AM/PM]` | `[13/10/2025, 9:14 AM]` |
 
 ---
 
@@ -180,8 +221,12 @@ The parser handles all known WhatsApp timestamp formats across locales:
 
 ```
 whatsapp-transcriber/
-├── transcriber.py     # entire application (single file)
-├── requirements.txt   # Python dependencies
+├── transcriber.py      # entire application
+├── make_icon.py        # generates icon.ico / icon.png (Pillow required)
+├── create_shortcut.py  # creates a Windows desktop shortcut
+├── icon.ico            # multi-resolution icon (16–256 px)
+├── icon.png            # 512 px PNG
+├── requirements.txt
 └── README.md
 ```
 
@@ -189,13 +234,21 @@ whatsapp-transcriber/
 
 ## Troubleshooting
 
-**"FFmpeg not found in PATH"** — Install FFmpeg and restart the app. See [Requirements](#requirements).
+**"FFmpeg not found in PATH"** — Install FFmpeg and restart. See [Requirements](#requirements).
 
-**Whisper fails to install** — Run manually: `pip install faster-whisper` or `pip install openai-whisper`
+**Whisper fails to install** — Run manually: `pip install faster-whisper` or `pip install openai-whisper`.
 
-**Garbled / wrong timestamps** — WhatsApp uses the phone's locale for date formatting. If dates are not parsing correctly, open an issue with a sample (anonymised) line from your `_chat.txt`.
+**GPU selected but transcription runs slowly** — CUDA may not be set up correctly. Try switching to CPU and check your CUDA / cuDNN installation.
 
-**Audio transcribed but text is wrong language** — Whisper auto-detects language. If it guesses incorrectly on short clips, try a larger model (`small` or above).
+**Transcription is in the wrong language** — Set an explicit language in Step 3. Auto-detect can misidentify very short clips.
+
+**Chat dates not parsed** — WhatsApp uses the phone's locale for date formatting. If lines are being skipped, open an issue with a (sanitised) sample line from your `_chat.txt`.
+
+---
+
+## Contributing
+
+Bug reports, language-format samples, and pull requests are welcome. Please open an issue before starting significant work so we can discuss the approach.
 
 ---
 
