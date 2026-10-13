@@ -182,9 +182,34 @@ def _extract_audio_name(content: str) -> Optional[str]:
     return None
 
 
+def _parse_srt(path: Path) -> str:
+    """Extract plain spoken text from an SRT subtitle file."""
+    text_parts: List[str] = []
+    _SRT_INDEX = re.compile(r"^\d+$")
+    _SRT_TS    = re.compile(r"^\d{2}:\d{2}:\d{2}[,\.]\d{3}\s+-->\s+\d{2}:\d{2}:\d{2}")
+    try:
+        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+            line = line.strip()
+            if not line or _SRT_INDEX.match(line) or _SRT_TS.match(line):
+                continue
+            text_parts.append(line)
+    except Exception:
+        pass
+    return " ".join(text_parts).strip()
+
+
+def _read_transcript(path: Path) -> str:
+    """Read a transcript file, handling both plain .txt and .srt formats."""
+    if path.suffix.lower() == ".srt":
+        return _parse_srt(path)
+    return path.read_text(encoding="utf-8", errors="replace").strip()
+
+
 def _find_saved_transcript(audio_path: Path) -> Optional[Path]:
-    """Return path of an existing transcript file if present, else None."""
+    """Return path of an existing transcript sidecar (.txt or .srt), or None."""
     for candidate in (
+        audio_path.parent / (audio_path.name + ".srt"),  # foo.opus.srt
+        audio_path.with_suffix(".srt"),                  # foo.srt
         audio_path.parent / (audio_path.name + ".txt"),  # foo.opus.txt
         audio_path.with_suffix(".txt"),                  # foo.txt
     ):
@@ -230,7 +255,7 @@ def parse_chat_file(chat_path: Path, media_dir: Path) -> List[Message]:
                         audio_p = candidate
                         txp = _find_saved_transcript(candidate)
                         if txp:
-                            saved_transcript = txp.read_text(encoding="utf-8").strip()
+                            saved_transcript = _read_transcript(txp)
                             from_saved = True
                     # else audio_p stays None → missing
 
