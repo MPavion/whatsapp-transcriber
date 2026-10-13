@@ -270,14 +270,50 @@ def _extract_zip(zip_path: Path) -> Path:
     return out
 
 
+def _looks_like_whatsapp_chat(path: Path) -> bool:
+    """
+    Return True if any of the first 20 lines of path matches a WhatsApp
+    timestamp pattern. Used to recognise chat files that aren't named _chat.txt.
+    """
+    try:
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            for _ in range(20):
+                raw = fh.readline()
+                if not raw:
+                    break
+                line = raw.lstrip("﻿‎‏").rstrip()
+                if line and any(p.match(line) for p in _LINE_PATTERNS):
+                    return True
+    except Exception:
+        pass
+    return False
+
+
+def _find_chat_file(directory: Path) -> Optional[Path]:
+    """
+    Return the WhatsApp chat text file inside directory, or None.
+    Tries _chat.txt first, then any .txt whose content looks like a WhatsApp export.
+    """
+    standard = directory / "_chat.txt"
+    if standard.exists():
+        return standard
+    for txt in sorted(directory.glob("*.txt")):
+        # Skip transcription sidecars (foo.opus.txt, foo.m4a.txt, etc.)
+        lower = txt.name.lower()
+        if any(lower.endswith(ext + ".txt") for ext in (".opus", ".m4a", ".mp3", ".ogg", ".aac", ".wav", ".wma", ".oga")):
+            continue
+        if _looks_like_whatsapp_chat(txt):
+            return txt
+    return None
+
+
 def _find_chat_dirs(
     root: Path,
     log: Optional[Callable[[str], None]] = None,
 ) -> List[Path]:
     """
-    Recursively find all directories containing _chat.txt.
-    Extracts any ZIP files found along the way.
-    Logs every step so callers can diagnose missing exports.
+    Recursively find all directories that contain a WhatsApp chat export.
+    Extracts ZIPs along the way. Logs every discovery step.
     """
     def _l(msg: str) -> None:
         if log:
@@ -285,38 +321,62 @@ def _find_chat_dirs(
 
     dirs: List[Path] = []
 
-    # ── Pass 1: extract ZIPs and check for _chat.txt inside ───────────────
+    # ── Pass 1: extract ZIPs ──────────────────────────────────────────────
     zips = sorted(root.rglob("*.zip"))
     if zips:
         _l(f"  Found {len(zips)} ZIP file(s)")
     for z in zips:
         try:
             extracted = _extract_zip(z)
-            if (extracted / "_chat.txt").exists():
-                _l(f"  ZIP export: {z.relative_to(root)}")
+            cf = _find_chat_file(extracted)
+            if cf:
+                _l(f"  ZIP export: {z.relative_to(root)}  (chat file: {cf.name})")
                 if extracted not in dirs:
                     dirs.append(extracted)
             else:
-                _l(f"  ZIP skipped (no _chat.txt inside): {z.name}")
+                _l(f"  ZIP skipped (no chat file found inside): {z.name}")
         except Exception as exc:
             _l(f"  ZIP error — {z.name}: {exc}")
 
-    # ── Pass 2: find already-extracted folders with _chat.txt ─────────────
-    chat_files = sorted(root.rglob("_chat.txt"))
-    for cf in chat_files:
+    # ── Pass 2: find pre-extracted folders — standard _chat.txt first ─────
+    for cf in sorted(root.rglob("_chat.txt")):
         d = cf.parent
         if d not in dirs:
-            _l(f"  Extracted export: {cf.relative_to(root)}")
+            _l(f"  Export: {cf.relative_to(root)}")
             dirs.append(d)
 
-    # ── Nothing found: list the top-level contents to help the user ───────
+    # ── Pass 3: if nothing yet, scan subfolders for non-standard filenames ─
+    if not dirs:
+        _l("  _chat.txt not found — scanning for other WhatsApp chat files...")
+        for candidate in sorted(root.rglob("*.txt")):
+            # Skip known sidecar files
+            lower = candidate.name.lower()
+            if any(lower.endswith(ext + ".txt") for ext in (".opus", ".m4a", ".mp3", ".ogg", ".aac", ".wav", ".wma", ".oga")):
+                continue
+            if _looks_like_whatsapp_chat(candidate):
+                d = candidate.parent
+                _l(f"  Export (non-standard name): {candidate.relative_to(root)}")
+                if d not in dirs:
+                    dirs.append(d)
+
+    # ── Diagnostic: show folder contents when still nothing found ─────────
     if not dirs:
         _l(f"  No WhatsApp exports found under: {root}")
-        _l("  Top-level contents of selected folder:")
+        _l("  Folder contents (2 levels shown):")
         try:
             for item in sorted(root.iterdir()):
-                marker = "/" if item.is_dir() else ""
-                _l(f"    {item.name}{marker}")
+                tag = "/" if item.is_dir() else f"  [{item.suffix or 'no ext'}]"
+                _l(f"    {item.name}{tag}")
+                if item.is_dir():
+                    try:
+                        children = sorted(item.iterdir())
+                        for child in children[:12]:
+                            ctag = "/" if child.is_dir() else f"  [{child.suffix or 'no ext'}]"
+                            _l(f"      {child.name}{ctag}")
+                        if len(children) > 12:
+                            _l(f"      ... and {len(children) - 12} more file(s)")
+                    except Exception:
+                        _l("      (unable to list contents)")
         except Exception:
             pass
 
@@ -334,15 +394,20 @@ def scan_source_folder(
     result.conversations_found = len(chat_dirs)
 
     for chat_dir in chat_dirs:
+        chat_file = _find_chat_file(chat_dir)
+        if chat_file is None:
+            if log:
+                log(f"  Skipping {chat_dir.name}: chat file disappeared")
+            continue
         try:
-            msgs = parse_chat_file(chat_dir / "_chat.txt", chat_dir)
+            msgs = parse_chat_file(chat_file, chat_dir)
         except Exception as exc:
             if log:
                 log(f"  Parse error in {chat_dir.name}: {exc}")
             msgs = []
 
-        if log and msgs:
-            log(f"  {chat_dir.name}: {len(msgs)} messages")
+        if log:
+            log(f"  {chat_dir.name}: {len(msgs)} messages parsed from {chat_file.name}")
 
         all_messages.extend(msgs)
 
